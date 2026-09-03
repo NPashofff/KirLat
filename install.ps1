@@ -8,7 +8,16 @@ $ErrorActionPreference = "Stop"
 $repo = "NPashofff/KirLat"
 $dir = Join-Path $env:LOCALAPPDATA "KirLat"
 $exe = Join-Path $dir "KirLat.exe"
-$tmp = Join-Path $env:TEMP "KirLat-install"
+$tmp = Join-Path ([System.IO.Path]::GetTempPath()) "KirLat-install"
+
+# Remove-Item -Recurse в Windows PowerShell 5.1 хвърля терминираща PSArgumentException върху
+# 8.3 кратки пътища (напр. %TEMP% = C:\Users\X\LOCAL~1\Temp), която -ErrorAction не потиска.
+# Затова трием през .NET, с cmd като резервен вариант, и никога не прекъсваме инсталацията.
+function Remove-Tree([string]$path) {
+    if (-not (Test-Path -LiteralPath $path)) { return }
+    try { [System.IO.Directory]::Delete($path, $true); return } catch {}
+    try { cmd /c rmdir /s /q "$path" 2>$null } catch {}
+}
 
 Write-Host "KirLat: търся последната версия..."
 $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases/latest" -Headers @{ "User-Agent" = "KirLat-installer" }
@@ -19,18 +28,18 @@ Get-Process -Name KirLat -ErrorAction SilentlyContinue | Stop-Process -Force -Er
 Start-Sleep -Milliseconds 500
 
 Write-Host "KirLat: свалям $($release.tag_name)..."
-Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
+Remove-Tree $tmp
 New-Item -ItemType Directory -Force -Path $tmp | Out-Null
 $zip = Join-Path $tmp "KirLat-windows.zip"
 Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $zip -UseBasicParsing
 Unblock-File $zip
 Expand-Archive -Path $zip -DestinationPath (Join-Path $tmp "x") -Force
 
-Remove-Item -Recurse -Force $dir -ErrorAction SilentlyContinue
+Remove-Tree $dir
 New-Item -ItemType Directory -Force -Path $dir | Out-Null
 Copy-Item -Path (Join-Path $tmp "x\*") -Destination $dir -Recurse -Force
 Get-ChildItem $dir -Recurse -File | Unblock-File
-Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
+Remove-Tree $tmp
 if (-not (Test-Path $exe)) { throw "KirLat.exe липсва след разархивиране" }
 
 # Пряк път в Start менюто
