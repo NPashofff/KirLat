@@ -33,5 +33,18 @@ def make_icon_image(size: int = 64) -> Image.Image:
     return img
 
 
+def make_mac_template_icon(size: int = 44) -> Image.Image:
+    """Монохромна „template“ икона за лентата с менюта на macOS.
+
+    Черен глиф върху прозрачен фон; macOS сам го оцветява (черно/бяло) според лентата.
+    44 px = 22 pt @2x (Retina).
+    """
+    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    font = _font(int(size * 0.62))
+    d.text((size / 2, size / 2), "КЛ", fill=(0, 0, 0, 255), font=font, anchor="mm")
+    return img
+
+
 if __name__ == "__main__":
     make_icon_image(256).save(sys.argv[1] if len(sys.argv) > 1 else "icon.png")

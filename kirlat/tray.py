@@ -10,7 +10,8 @@ import pystray
 from . import autostart, config
 from .actions import SelectionConverter
 from .hotkey import HotkeyListener
-from .icon import make_icon_image
+from .config import IS_MAC
+from .icon import make_icon_image, make_mac_template_icon
 from .platform_utils import app_command, mac_accessibility_trusted
 
 log = logging.getLogger(__name__)
@@ -54,10 +55,39 @@ class TrayApp:
 
     def _setup(self, icon) -> None:
         icon.visible = True
+        self._apply_mac_template_icon()
         if not mac_accessibility_trusted(prompt=True):
             self.notify("Дайте разрешение за Accessibility в System Settings → Privacy & Security.")
         self.start_listener()
         threading.Thread(target=self._watch_config, daemon=True).start()
+
+    def _apply_mac_template_icon(self) -> None:
+        """macOS: заменя иконата с монохромна Retina „template“ икона (pystray подава 1x цветна)."""
+        if not IS_MAC:
+            return
+        try:
+            import io
+
+            import AppKit
+            import Foundation
+
+            buf = io.BytesIO()
+            make_mac_template_icon(44).save(buf, "png")
+            data = Foundation.NSData.dataWithBytes_length_(buf.getvalue(), len(buf.getvalue()))
+
+            def apply():
+                try:
+                    ns = AppKit.NSImage.alloc().initWithData_(data)
+                    ns.setSize_((22, 22))
+                    ns.setTemplate_(True)
+                    self.icon._icon_image = ns
+                    self.icon._status_item.button().setImage_(ns)
+                except Exception:
+                    log.exception("Mac template icon failed")
+
+            Foundation.NSOperationQueue.mainQueue().addOperationWithBlock_(apply)
+        except Exception:
+            log.exception("Mac template icon setup failed")
 
     def start_listener(self) -> None:
         if self.listener is not None:

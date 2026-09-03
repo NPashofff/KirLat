@@ -12,6 +12,7 @@ DEFAULTS = {
     "layout": "phonetic_traditional",
     "direction": "auto",          # auto | to_bg | to_en
     "restore_clipboard": True,
+    "sound": True,
 }
 
 

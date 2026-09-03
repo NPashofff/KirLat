@@ -8,6 +8,7 @@ from pynput.keyboard import Controller, Key, KeyCode
 
 from .config import IS_MAC, IS_WIN
 from .converter import convert
+from .sound import play_success
 
 log = logging.getLogger(__name__)
 
@@ -72,6 +73,8 @@ class SelectionConverter:
         pyperclip.copy(new_text)
         time.sleep(0.05)
         self._chord(_vk_key("v"))
+        if cfg.get("sound", True):
+            play_success()
         time.sleep(0.3)
         self._restore(old_clip, cfg)
         log.info("Converted %d chars", len(text))

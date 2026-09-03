@@ -87,17 +87,27 @@ def run() -> None:
         row=8, column=0, columnspan=4, sticky="w", **PAD)
     ttk.Checkbutton(frm, text="Възстановявай съдържанието на клипборда след замяна", variable=v_restore).grid(
         row=9, column=0, columnspan=4, sticky="w", **PAD)
+    v_sound = tk.BooleanVar(value=bool(cfg.get("sound", True)))
+    snd = ttk.Frame(frm)
+    snd.grid(row=10, column=0, columnspan=4, sticky="w", **PAD)
+    ttk.Checkbutton(snd, text="Звуков сигнал при замяна", variable=v_sound).pack(side="left", padx=(0, 10))
+
+    def play_test_sound():
+        from .sound import play_success
+        play_success()
+
+    ttk.Button(snd, text="Чуй", width=6, command=play_test_sound).pack(side="left")
 
     # ---- Проба ---------------------------------------------------------------
-    ttk.Label(frm, text="Проба", font=bold).grid(row=10, column=0, columnspan=4, sticky="w", **PAD)
+    ttk.Label(frm, text="Проба", font=bold).grid(row=11, column=0, columnspan=4, sticky="w", **PAD)
     v_test_in = tk.StringVar(value="Zdrawej, kak si?")
     v_test_out = tk.StringVar()
-    ttk.Entry(frm, textvariable=v_test_in, width=72).grid(row=11, column=0, columnspan=4, sticky="w", **PAD)
-    ttk.Label(frm, textvariable=v_test_out, font=("TkDefaultFont", 11)).grid(row=12, column=0, columnspan=4, sticky="w", **PAD)
+    ttk.Entry(frm, textvariable=v_test_in, width=72).grid(row=12, column=0, columnspan=4, sticky="w", **PAD)
+    ttk.Label(frm, textvariable=v_test_out, font=("TkDefaultFont", 11)).grid(row=13, column=0, columnspan=4, sticky="w", **PAD)
 
     # ---- Бутони --------------------------------------------------------------
     btns = ttk.Frame(frm)
-    btns.grid(row=13, column=0, columnspan=4, sticky="e", pady=(10, 0))
+    btns.grid(row=14, column=0, columnspan=4, sticky="e", pady=(10, 0))
 
     def current_layout_id() -> str:
         return layout_ids[layout_names.index(v_layout.get())]
@@ -127,6 +137,7 @@ def run() -> None:
             "layout": current_layout_id(),
             "direction": current_dir_id(),
             "restore_clipboard": v_restore.get(),
+            "sound": v_sound.get(),
         })
         try:
             config.save(new_cfg)
