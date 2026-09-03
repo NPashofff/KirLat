@@ -55,7 +55,10 @@ EOF
 launchctl unload -w "$PLIST" 2>/dev/null || true
 launchctl load -w "$PLIST" 2>/dev/null || true
 
-open -a "$APP"
+# RunAtLoad вече стартира приложението; пускаме го изрично само ако това не е станало
+# (иначе втората инстанция отваря прозореца с настройки).
+sleep 2
+pgrep -x KirLat >/dev/null || open -a "$APP"
 echo
 echo "KirLat е инсталиран в $APP и стартиран (иконата е в лентата с менюта)."
 echo "ВАЖНО: разрешете го в System Settings → Privacy & Security → Accessibility и Input Monitoring,"
