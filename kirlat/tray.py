@@ -22,6 +22,7 @@ class TrayApp:
         self.cfg = config.load()
         self.converter = SelectionConverter(lambda: self.cfg, notify=self.notify)
         self.listener = None
+        self.listener_ok = False
         self._settings_proc = None
         self._stop = threading.Event()
         self.icon = pystray.Icon("KirLat", make_icon_image(64), self._title(), menu=self._menu())
@@ -30,8 +31,21 @@ class TrayApp:
     def _title(self) -> str:
         return f"KirLat – {config.hotkey_label(self.cfg['hotkey'])}"
 
+    def _status_text(self, *_) -> str:
+        label = config.hotkey_label(self.cfg["hotkey"])
+        if self.listener_ok:
+            return f"{label}: активна"
+        return f"{label}: НЕ Е АКТИВНА" + (" – няма разрешение" if IS_MAC else "")
+
     def _menu(self):
+        items = [
+            pystray.MenuItem(self._status_text, None, enabled=False),
+        ]
+        if IS_MAC:
+            items.append(pystray.MenuItem("Отвори разрешенията на macOS…", self.open_mac_permissions))
+        items.append(pystray.Menu.SEPARATOR)
         return pystray.Menu(
+            *items,
             pystray.MenuItem("Настройки…", self.open_settings, default=True),
             pystray.MenuItem("Преобразувай селекцията", self.convert_now),
             pystray.MenuItem(
@@ -136,9 +150,31 @@ class TrayApp:
         )
         try:
             self.listener.start()
+            self.listener_ok = True
         except Exception as e:
-            log.exception("Cannot start hotkey listener")
-            self.notify(f"Клавишната комбинация не може да бъде регистрирана: {e}")
+            self.listener_ok = False
+            log.error("Cannot start hotkey listener: %s", e)
+            self.notify(f"Клавишната комбинация не е активна: {e}")
+        try:
+            self.icon.update_menu()
+        except Exception:
+            pass
+
+    def open_mac_permissions(self, *_) -> None:
+        try:
+            subprocess.Popen(["open", "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"])
+        except Exception:
+            log.exception("Cannot open System Settings")
+
+    def _retry_listener_if_permitted(self) -> None:
+        """macOS: щом разрешението бъде дадено, активира комбинацията без рестарт."""
+        if self.listener_ok or not IS_MAC:
+            return
+        if mac_accessibility_trusted(prompt=False):
+            log.info("Accessibility granted – retrying hotkey listener")
+            self.start_listener()
+            if self.listener_ok:
+                self.notify(f"Комбинацията {config.hotkey_label(self.cfg['hotkey'])} е активна.")
 
     def reload(self) -> None:
         self.cfg = config.load()
@@ -150,8 +186,15 @@ class TrayApp:
         """Презарежда настройките, когато файлът бъде променен (от прозореца за настройки)."""
         path = config.config_path()
         last = os.path.getmtime(path) if os.path.exists(path) else None
+        tick = 0
         while not self._stop.is_set():
             time.sleep(1.0)
+            tick += 1
+            if tick % 3 == 0:
+                try:
+                    self._retry_listener_if_permitted()
+                except Exception:
+                    log.exception("Listener retry failed")
             try:
                 cur = os.path.getmtime(path) if os.path.exists(path) else None
             except OSError:

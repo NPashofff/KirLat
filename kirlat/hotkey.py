@@ -43,7 +43,24 @@ class HotkeyListener:
             self._listener = keyboard.GlobalHotKeys({self._linux_combo(): self._fire})
         self._listener.daemon = True
         self._listener.start()
+        # На macOS без разрешение Accessibility event tap-ът не може да се създаде и нишката
+        # умира тихо – проверяваме, за да не изглежда, че всичко е наред.
+        import time
+        for _ in range(10):
+            time.sleep(0.05)
+            if getattr(self._listener, "running", True):
+                break
+        if not getattr(self._listener, "running", True):
+            self._listener = None
+            raise RuntimeError(
+                "слушателят на клавиатурата не стартира"
+                + (" – липсва разрешение Accessibility / Input Monitoring" if IS_MAC else "")
+            )
         log.info("Hotkey listener started: %s", self.hotkey)
+
+    @property
+    def running(self) -> bool:
+        return self._listener is not None and bool(getattr(self._listener, "running", True))
 
     def stop(self) -> None:
         if self._listener is not None:
