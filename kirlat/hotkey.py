@@ -42,15 +42,19 @@ class HotkeyListener:
         else:
             self._listener = keyboard.GlobalHotKeys({self._linux_combo(): self._fire})
         self._listener.daemon = True
+        if IS_MAC:
+            self._log_mac_permissions()
         self._listener.start()
-        # На macOS без разрешение Accessibility event tap-ът не може да се създаде и нишката
-        # умира тихо – проверяваме, за да не изглежда, че всичко е наред.
+        # На macOS без разрешение Accessibility event tap-ът не може да се създаде: pynput
+        # маркира listener-а като „готов“ и нишката просто приключва (running остава True!).
+        # Затова проверяваме дали нишката е жива, не флага running.
         import time
-        for _ in range(10):
-            time.sleep(0.05)
-            if getattr(self._listener, "running", True):
-                break
-        if not getattr(self._listener, "running", True):
+        try:
+            self._listener.wait()
+        except Exception:
+            pass
+        time.sleep(0.2)
+        if not self._listener.is_alive():
             self._listener = None
             raise RuntimeError(
                 "слушателят на клавиатурата не стартира"
@@ -60,7 +64,21 @@ class HotkeyListener:
 
     @property
     def running(self) -> bool:
-        return self._listener is not None and bool(getattr(self._listener, "running", True))
+        return self._listener is not None and self._listener.is_alive()
+
+    @staticmethod
+    def _log_mac_permissions() -> None:
+        try:
+            import Quartz
+            from ApplicationServices import AXIsProcessTrusted
+            log.info(
+                "macOS permissions: accessibility=%s listen=%s post=%s",
+                bool(AXIsProcessTrusted()),
+                bool(Quartz.CGPreflightListenEventAccess()) if hasattr(Quartz, "CGPreflightListenEventAccess") else "?",
+                bool(Quartz.CGPreflightPostEventAccess()) if hasattr(Quartz, "CGPreflightPostEventAccess") else "?",
+            )
+        except Exception as e:
+            log.info("macOS permissions check failed: %s", e)
 
     def stop(self) -> None:
         if self._listener is not None:
@@ -72,6 +90,7 @@ class HotkeyListener:
 
     # -------------------------------------------------------------- helpers
     def _fire(self) -> None:
+        log.info("Hotkey pressed")
         threading.Thread(target=self._safe_callback, daemon=True).start()
 
     def _safe_callback(self) -> None:
