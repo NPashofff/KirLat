@@ -11,4 +11,4 @@ if (-not (Test-Path $py)) { throw "Python не е намерен. Инстали
 & $py -m pip install --quiet -r requirements.txt pyinstaller
 & $py make_icon.py
 & $py -m PyInstaller --noconfirm --clean KirLat.spec
-Write-Host "`nГотово: $PSScriptRoot\dist\KirLat.exe"
+Write-Host "`nГотово: $PSScriptRoot\dist\KirLat\KirLat.exe (копирайте цялата папка dist\KirLat)"

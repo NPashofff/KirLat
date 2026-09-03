@@ -60,8 +60,11 @@ if IS_MAC:
         },
     )
 else:
+    # onedir (папка), а не onefile: единичните самоизвличащи се exe-та
+    # много по-често се засичат погрешно от Windows Defender / SmartScreen.
     exe = EXE(
-        pyz, a.scripts, a.binaries, a.datas, [],
+        pyz, a.scripts, [],
+        exclude_binaries=True,
         name="KirLat",
         debug=False,
         strip=False,
@@ -69,3 +72,4 @@ else:
         console=False,
         icon=icon,
     )
+    coll = COLLECT(exe, a.binaries, a.datas, strip=False, upx=False, name="KirLat")

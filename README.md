@@ -15,11 +15,12 @@
 
 ### Windows
 
-**Вариант 1 – сваляне:** изтеглете [KirLat.exe](https://github.com/NPashofff/KirLat/releases/latest/download/KirLat.exe)
-и го стартирайте. Иконата се появява в трея. Автостартът се включва от настройките.
+**Вариант 1 – сваляне:** изтеглете [KirLat-windows.zip](https://github.com/NPashofff/KirLat/releases/latest/download/KirLat-windows.zip),
+разархивирайте папката където искате и стартирайте `KirLat.exe`. Иконата се появява в трея.
+Автостартът се включва от настройките.
 
 **Вариант 2 – една команда** (PowerShell): сваля последната версия в `%LOCALAPPDATA%\KirLat`,
-добавя пряк път в Start менюто, включва автостарт и стартира приложението.
+добавя пряк път в Start менюто, пита дали да включи автостарт и стартира приложението.
 
 ```powershell
 irm https://raw.githubusercontent.com/NPashofff/KirLat/main/install.ps1 | iex
@@ -51,6 +52,24 @@ curl -fsSL https://raw.githubusercontent.com/NPashofff/KirLat/main/install.sh | 
 curl -fsSL https://raw.githubusercontent.com/NPashofff/KirLat/main/uninstall.sh | bash
 ```
 
+### Windows Defender / SmartScreen
+
+Възможно е Defender да засече KirLat като „Behavior:Win32/Persistence“ или SmartScreen да покаже
+„Unknown publisher“. Това е фалшиво положително: приложението не е подписано с платен сертификат,
+свалено е от интернет, слага запис за автостарт, закача глобален keyboard hook (за клавишната
+комбинация) и симулира Ctrl+C / Ctrl+V. Точно това е поведението, което евристиката търси.
+Кодът е публичен в това repo, а билдовете се правят автоматично от GitHub Actions от същия код.
+
+Какво да направите:
+
+1. Windows Security → Virus & threat protection → Protection history → отворете предупреждението →
+   **Actions → Allow** (или Restore, ако файлът е бил карантиниран).
+2. SmartScreen: „More info“ → „Run anyway“.
+3. По желание докладвайте фалшивото засичане на Microsoft: https://www.microsoft.com/wdsi/filesubmission
+
+Ако предпочитате да не се доверявате на готовия билд, билднете го сами с `build_windows.ps1`
+или стартирайте от изходния код с `pythonw main.py`.
+
 **И в двата случая** macOS ще поиска разрешения *System Settings → Privacy & Security →
 Accessibility* и *Input Monitoring* за KirLat. Без тях нищо не работи. След като ги дадете,
 рестартирайте приложението.
@@ -69,7 +88,7 @@ Accessibility* и *Input Monitoring* за KirLat. Без тях нищо не р
 
 ## Готови билдове
 
-- Windows: `dist\KirLat.exe` (създава се с `build_windows.ps1`)
+- Windows: `dist\KirLat\KirLat.exe` (създава се с `build_windows.ps1`)
 - macOS: `dist/KirLat.app` (създава се с `build_macos.sh`, **изпълнява се на Mac**)
 
 ## Стартиране от изходния код
@@ -93,7 +112,7 @@ python main.py --convert "Zdrawej"   # проба в конзолата
 .\build_windows.ps1
 ```
 
-Резултат: `dist\KirLat.exe` (единичен файл, без конзола).
+Резултат: папка `dist\KirLat\` с `KirLat.exe` (без конзола). Копира се цялата папка.
 
 ### macOS
 

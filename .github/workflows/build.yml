@@ -32,10 +32,11 @@ jobs:
       - run: pip install -r requirements.txt pyinstaller
       - run: python make_icon.py
       - run: python -m PyInstaller --noconfirm --clean KirLat.spec
+      - run: Compress-Archive -Path dist/KirLat/* -DestinationPath KirLat-windows.zip
       - uses: actions/upload-artifact@v4
         with:
           name: KirLat-windows
-          path: dist/KirLat.exe
+          path: KirLat-windows.zip
 
   macos:
     needs: test
@@ -66,6 +67,6 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           files: |
-            artifacts/KirLat-windows/KirLat.exe
+            artifacts/KirLat-windows/KirLat-windows.zip
             artifacts/KirLat-macos/KirLat-macOS.zip
           generate_release_notes: true
