@@ -12,6 +12,13 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install --quiet --upgrade pip
 pip install --quiet -r requirements.txt pyinstaller pyobjc-framework-Cocoa pyobjc-framework-Quartz pyobjc-framework-ApplicationServices
+if ! python -c "import tkinter" 2>/dev/null; then
+  pyver="$(python -c 'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1]}")')"
+  echo "Python $pyver няма tkinter (нужен за прозореца с настройки)."
+  echo "Homebrew: brew install python-tk@$pyver   (или ползвайте Python от python.org)"
+  exit 1
+fi
+
 python make_icon.py
 pyinstaller --noconfirm --clean KirLat.spec
 

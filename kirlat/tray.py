@@ -25,6 +25,7 @@ class TrayApp:
         self.listener_ok = False
         self._settings_proc = None
         self._stop = threading.Event()
+        self._init_listener_state()
         self.icon = pystray.Icon("KirLat", make_icon_image(64), self._title(), menu=self._menu())
 
     # ------------------------------------------------------------------ UI
@@ -142,7 +143,17 @@ class TrayApp:
         except Exception:
             log.exception("Mac text title failed")
 
-    def start_listener(self) -> None:
+    RETRY_DELAY_MIN = 3.0       # секунди между опитите за (ре)стартиране на слушателя
+    RETRY_DELAY_MAX = 300.0
+
+    def _init_listener_state(self) -> None:
+        self.listener = None
+        self.listener_ok = False
+        self._next_listener_retry = 0.0
+        self._retry_delay = self.RETRY_DELAY_MIN
+        self._clock = time.time
+
+    def start_listener(self, notify_failure: bool = True) -> None:
         if self.listener is not None:
             self.listener.stop()
         self.listener = HotkeyListener(
@@ -154,7 +165,8 @@ class TrayApp:
         except Exception as e:
             self.listener_ok = False
             log.error("Cannot start hotkey listener: %s", e)
-            self.notify(f"Клавишната комбинация не е активна: {e}")
+            if notify_failure:
+                self.notify(f"Клавишната комбинация не е активна: {e}")
         try:
             self.icon.update_menu()
         except Exception:
@@ -167,14 +179,30 @@ class TrayApp:
             log.exception("Cannot open System Settings")
 
     def _retry_listener_if_permitted(self) -> None:
-        """macOS: щом разрешението бъде дадено, активира комбинацията без рестарт."""
-        if self.listener_ok or not IS_MAC:
+        """Активира комбинацията без рестарт на приложението: ако слушателят не е стартирал
+        (на macOS – щом бъде дадено разрешението Accessibility) или нишката му е умряла.
+        Известие има само при успех; между неуспешните опити изчакването расте до 5 min."""
+        if self._stop.is_set():
             return
-        if mac_accessibility_trusted(prompt=False):
-            log.info("Accessibility granted – retrying hotkey listener")
-            self.start_listener()
-            if self.listener_ok:
-                self.notify(f"Комбинацията {config.hotkey_label(self.cfg['hotkey'])} е активна.")
+        if self.listener_ok and self.listener is not None and not self.listener.running:
+            log.warning("Hotkey listener thread died – will restart")
+            self.listener_ok = False
+            try:
+                self.icon.update_menu()
+            except Exception:
+                pass
+        if self.listener_ok or self._clock() < self._next_listener_retry:
+            return
+        if IS_MAC and not mac_accessibility_trusted(prompt=False):
+            return
+        log.info("Retrying hotkey listener")
+        self.start_listener(notify_failure=False)
+        if self.listener_ok:
+            self._retry_delay = self.RETRY_DELAY_MIN
+            self.notify(f"Комбинацията {config.hotkey_label(self.cfg['hotkey'])} е активна.")
+        else:
+            self._next_listener_retry = self._clock() + self._retry_delay
+            self._retry_delay = min(self._retry_delay * 2, self.RETRY_DELAY_MAX)
 
     def reload(self) -> None:
         self.cfg = config.load()
@@ -230,6 +258,8 @@ class TrayApp:
 
     def quit(self, *_) -> None:
         self._stop.set()
-        if self.listener is not None:
-            self.listener.stop()
+        listener, self.listener = self.listener, None   # за да не го рестартира _watch_config
+        self.listener_ok = False
+        if listener is not None:
+            listener.stop()
         self.icon.stop()

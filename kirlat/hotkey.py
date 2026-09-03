@@ -13,6 +13,23 @@ from .layouts import MAC_KEYCODE, WIN_VK
 log = logging.getLogger(__name__)
 
 
+def _mac_listener_class():
+    """pynput Listener, който пази CGEventTap-а си (pynput го държи само като локална
+    променлива), за да можем да го включим отново, ако macOS го спре. Ако бъдеща версия
+    на pynput преименува _create_event_tap, методът просто не се вика и tap остава None –
+    комбинацията работи, губи се само повторното включване."""
+    from pynput import keyboard
+
+    class TapListener(keyboard.Listener):
+        tap = None
+
+        def _create_event_tap(self):
+            self.tap = super()._create_event_tap()
+            return self.tap
+
+    return TapListener
+
+
 class HotkeyListener:
     def __init__(self, hotkey: dict, callback, busy_check=None):
         self.hotkey = hotkey
@@ -38,7 +55,7 @@ class HotkeyListener:
             self._listener = keyboard.Listener(win32_event_filter=self._win_filter)
         elif IS_MAC:
             self._keycode = MAC_KEYCODE[self._key]
-            self._listener = keyboard.Listener(darwin_intercept=self._mac_intercept)
+            self._listener = _mac_listener_class()(darwin_intercept=self._mac_intercept)
         else:
             self._listener = keyboard.GlobalHotKeys({self._linux_combo(): self._fire})
         self._listener.daemon = True
@@ -148,6 +165,13 @@ class HotkeyListener:
     def _mac_intercept(self, event_type, event):
         import Quartz
 
+        if event_type in (Quartz.kCGEventTapDisabledByTimeout, Quartz.kCGEventTapDisabledByUserInput):
+            # macOS спира tap-а, ако callback-ът се забави; без включване комбинацията умира тихо.
+            log.warning("macOS disabled the event tap (type %s) – re-enabling", event_type)
+            tap = getattr(self._listener, "tap", None)
+            if tap is not None:
+                Quartz.CGEventTapEnable(tap, True)
+            return event
         if event_type not in (Quartz.kCGEventKeyDown, Quartz.kCGEventKeyUp):
             return event
         keycode = Quartz.CGEventGetIntegerValueField(event, Quartz.kCGKeyboardEventKeycode)

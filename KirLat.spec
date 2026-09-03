@@ -7,6 +7,9 @@ IS_MAC = sys.platform == "darwin"
 IS_WIN = sys.platform.startswith("win")
 HERE = os.path.abspath(".")
 
+sys.path.insert(0, HERE)
+from kirlat import __version__ as VERSION  # noqa: E402  (kirlat/__init__.py няма импорти)
+
 if IS_WIN:
     hidden = ["pystray._win32", "pynput.keyboard._win32", "pynput.mouse._win32"]
     icon = os.path.join(HERE, "assets", "icon.ico")
@@ -53,7 +56,8 @@ if IS_MAC:
         info_plist={
             "CFBundleName": "KirLat",
             "CFBundleDisplayName": "KirLat",
-            "CFBundleShortVersionString": "1.0.0",
+            "CFBundleShortVersionString": VERSION,
+            "CFBundleVersion": VERSION,
             "LSUIElement": True,          # без икона в Dock – само в лентата с менюта
             "NSHighResolutionCapable": True,
             "NSAppleEventsUsageDescription": "KirLat симулира Cmd+C/Cmd+V, за да замени селектирания текст.",
