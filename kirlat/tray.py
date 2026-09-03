@@ -11,7 +11,7 @@ from . import autostart, config
 from .actions import SelectionConverter
 from .hotkey import HotkeyListener
 from .config import IS_MAC
-from .icon import make_icon_image, make_mac_template_icon
+from .icon import make_icon_image
 from .platform_utils import app_command, mac_accessibility_trusted
 
 log = logging.getLogger(__name__)
@@ -54,40 +54,79 @@ class TrayApp:
         self.icon.run(setup=self._setup)
 
     def _setup(self, icon) -> None:
-        icon.visible = True
-        self._apply_mac_template_icon()
+        if IS_MAC:
+            self._mac_show_on_main_thread()
+        else:
+            icon.visible = True
         if not mac_accessibility_trusted(prompt=True):
             self.notify("Дайте разрешение за Accessibility в System Settings → Privacy & Security.")
         self.start_listener()
         threading.Thread(target=self._watch_config, daemon=True).start()
 
-    def _apply_mac_template_icon(self) -> None:
-        """macOS: заменя иконата с монохромна Retina „template“ икона (pystray подава 1x цветна)."""
-        if not IS_MAC:
-            return
+    def _mac_show_on_main_thread(self) -> None:
+        """macOS: показва елемента в лентата и слага монохромна „template“ икона.
+
+        Всичко върви в главната нишка (AppKit не е thread-safe; pystray вика setup от помощна
+        нишка). Иконата се рисува с родния системен шрифт през AppKit, така че кирилицата е
+        гарантирана и е Retina. Ако нещо се провали, елементът показва текст „КЛ“, за да не е
+        никога с нулева ширина (невидим).
+        """
+        import Foundation
+
+        def apply():
+            try:
+                self.icon.visible = True
+            except Exception:
+                log.exception("icon.visible failed")
+            try:
+                self._mac_set_template_icon()
+            except Exception:
+                log.exception("Mac template icon failed; falling back to text title")
+                self._mac_set_text_title()
+
         try:
-            import io
-
-            import AppKit
-            import Foundation
-
-            buf = io.BytesIO()
-            make_mac_template_icon(44).save(buf, "png")
-            data = Foundation.NSData.dataWithBytes_length_(buf.getvalue(), len(buf.getvalue()))
-
-            def apply():
-                try:
-                    ns = AppKit.NSImage.alloc().initWithData_(data)
-                    ns.setSize_((22, 22))
-                    ns.setTemplate_(True)
-                    self.icon._icon_image = ns
-                    self.icon._status_item.button().setImage_(ns)
-                except Exception:
-                    log.exception("Mac template icon failed")
-
             Foundation.NSOperationQueue.mainQueue().addOperationWithBlock_(apply)
         except Exception:
-            log.exception("Mac template icon setup failed")
+            log.exception("Main-queue dispatch failed; showing from setup thread")
+            apply()
+
+    def _mac_set_template_icon(self) -> None:
+        import AppKit
+        import Foundation
+
+        button = self.icon._status_item.button()
+        size = 22.0
+        img = AppKit.NSImage.alloc().initWithSize_((size, size))
+        img.lockFocus()
+        try:
+            attrs = {
+                AppKit.NSFontAttributeName: AppKit.NSFont.boldSystemFontOfSize_(12.5),
+                AppKit.NSForegroundColorAttributeName: AppKit.NSColor.blackColor(),
+            }
+            text = Foundation.NSAttributedString.alloc().initWithString_attributes_("КЛ", attrs)
+            w, h = text.size().width, text.size().height
+            text.drawAtPoint_(((size - w) / 2.0, (size - h) / 2.0))
+        finally:
+            img.unlockFocus()
+        img.setTemplate_(True)
+        self.icon._icon_image = img
+        button.setImage_(img)
+        button.setTitle_("")
+        button.setImagePosition_(AppKit.NSImageOnly)
+        button.setHidden_(False)
+        log.info("macOS menu bar icon applied (template image)")
+
+    def _mac_set_text_title(self) -> None:
+        try:
+            import AppKit
+            button = self.icon._status_item.button()
+            button.setImage_(None)
+            button.setTitle_("КЛ")
+            button.setImagePosition_(AppKit.NSNoImage)
+            button.setHidden_(False)
+            log.info("macOS menu bar icon applied (text title)")
+        except Exception:
+            log.exception("Mac text title failed")
 
     def start_listener(self) -> None:
         if self.listener is not None:
