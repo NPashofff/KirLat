@@ -10,7 +10,12 @@ from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
-from kirlat import actions  # noqa: E402
+try:
+    from kirlat import actions
+except Exception as e:                       # pynput иска дисплей на Linux CI
+    actions, _import_error = None, e
+else:
+    _import_error = None
 
 HK = {"ctrl": True, "alt": False, "shift": False, "meta": False, "key": "d"}
 
@@ -42,6 +47,7 @@ def make(held_sequence):
     return conv
 
 
+@unittest.skipIf(actions is None, f"actions deps unavailable: {_import_error}")
 class WaitReleaseTests(unittest.TestCase):
     def test_returns_immediately_when_nothing_held(self):
         conv = make([False])
@@ -69,6 +75,7 @@ class WaitReleaseTests(unittest.TestCase):
         self.assertFalse(conv._wait_hotkey_released(HK, timeout=1.0))
 
 
+@unittest.skipIf(actions is None, f"actions deps unavailable: {_import_error}")
 class ModifierProbeTests(unittest.TestCase):
     def test_mac_reads_hid_flags(self):
         fake_q = mock.Mock()
@@ -100,6 +107,7 @@ class ModifierProbeTests(unittest.TestCase):
             self.assertIsNone(actions.SelectionConverter._hotkey_modifiers_held(HK))
 
 
+@unittest.skipIf(actions is None, f"actions deps unavailable: {_import_error}")
 class ConvertSelectionOrderTests(unittest.TestCase):
     """Синтетично пускане само ако изчакването изтече; chord-овете винаги след него."""
 
