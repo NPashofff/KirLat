@@ -14,6 +14,11 @@ log = logging.getLogger(__name__)
 
 SENTINEL = "⁣KirLat⁣"   # маркер, по който познаваме дали копирането е сработило
 COPY_TIMEOUT = 1.0
+RELEASE_TIMEOUT = 1.0   # макс. изчакване потребителят да пусне модификаторите на комбинацията
+
+# Маски на модификаторите в CGEventFlags (macOS) и virtual-key кодове (Windows)
+_MAC_MOD_MASK = {"ctrl": 0x40000, "alt": 0x80000, "shift": 0x20000, "meta": 0x100000}
+_WIN_MOD_VK = {"ctrl": (0x11,), "alt": (0x12,), "shift": (0x10,), "meta": (0x5B, 0x5C)}
 
 
 def _vk_key(char: str):
@@ -53,7 +58,15 @@ class SelectionConverter:
         cfg = self.get_config()
         old_clip = self._paste_safe()
 
-        self._release_hotkey_modifiers(cfg.get("hotkey", {}))
+        hk = cfg.get("hotkey", {})
+        self._neutralize_lonely_alt(hk)
+        # Изчакваме потребителят физически да пусне Ctrl/Alt/… от комбинацията. Ако ги
+        # пуснем само синтетично, реалното пускане идва по-късно – и попадне ли между
+        # Cmd/Ctrl-down и V-down на нашия chord, системата „забравя“ модификатора и в текста
+        # се появява буквата „v“ (или „c“) вместо paste/copy. Виждано и на macOS, и на Windows.
+        if not self._wait_hotkey_released(hk):
+            log.info("Hotkey modifiers still held after %.1fs – releasing them synthetically", RELEASE_TIMEOUT)
+            self._release_hotkey_modifiers(hk)
         time.sleep(0.05)
 
         pyperclip.copy(SENTINEL)
@@ -89,12 +102,47 @@ class SelectionConverter:
         time.sleep(0.02)
         self.kb.release(mod)
 
-    def _release_hotkey_modifiers(self, hk: dict) -> None:
-        """Пуска модификаторите на комбинацията, за да не се смесят с Ctrl+C / Ctrl+V."""
+    def _neutralize_lonely_alt(self, hk: dict) -> None:
+        """Windows: „самотен“ Alt/Win (натиснат и пуснат без друг видим клавиш – нашият е
+        погълнат от hook-а) отваря менюто/Start. Вмъкваме Ctrl, докато Alt/Win е още задържан."""
         if IS_WIN and (hk.get("alt") or hk.get("meta")):
-            # „самотен“ Alt/Win отваря меню/Start – вмъкваме Ctrl, за да не е самотен
             self.kb.press(Key.ctrl)
             self.kb.release(Key.ctrl)
+
+    @staticmethod
+    def _hotkey_modifiers_held(hk: dict):
+        """Дали някой от модификаторите на комбинацията е физически натиснат.
+        None – не може да се провери на тази платформа."""
+        mods = [m for m in ("ctrl", "alt", "shift", "meta") if hk.get(m)]
+        if IS_MAC:
+            import Quartz
+            flags = Quartz.CGEventSourceFlagsState(Quartz.kCGEventSourceStateHIDSystemState)
+            return any(flags & _MAC_MOD_MASK[m] for m in mods)
+        if IS_WIN:
+            import ctypes
+            user32 = ctypes.windll.user32
+            return any(user32.GetAsyncKeyState(vk) & 0x8000 for m in mods for vk in _WIN_MOD_VK[m])
+        return None
+
+    def _wait_hotkey_released(self, hk: dict, timeout: float = RELEASE_TIMEOUT) -> bool:
+        """Изчаква (до timeout) модификаторите на комбинацията да бъдат пуснати физически.
+        True ако са пуснати; False при изтекло време или ако проверката не е възможна."""
+        end = time.time() + timeout
+        while time.time() < end:
+            try:
+                held = self._hotkey_modifiers_held(hk)
+            except Exception:
+                log.debug("Modifier state check failed", exc_info=True)
+                return False
+            if held is None:
+                return False
+            if not held:
+                return True
+            time.sleep(0.01)
+        return False
+
+    def _release_hotkey_modifiers(self, hk: dict) -> None:
+        """Пуска модификаторите на комбинацията синтетично, за да не се смесят с Ctrl+C / Ctrl+V."""
         keys = []
         if hk.get("ctrl"):
             keys += [Key.ctrl_l, Key.ctrl_r]

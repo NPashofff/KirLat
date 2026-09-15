@@ -70,7 +70,7 @@ class TrayApp:
 
     def _setup(self, icon) -> None:
         if IS_MAC:
-            self._mac_show_on_main_thread()
+            self._on_main(self._mac_show)
         else:
             icon.visible = True
         if not mac_accessibility_trusted(prompt=True):
@@ -78,32 +78,58 @@ class TrayApp:
         self.start_listener()
         threading.Thread(target=self._watch_config, daemon=True).start()
 
-    def _mac_show_on_main_thread(self) -> None:
+    @staticmethod
+    def _on_main(fn) -> None:
+        """Изпълнява fn в главната нишка на macOS (асинхронно); другаде – направо.
+
+        AppKit не е thread-safe: pystray вика setup от помощна нишка, а _watch_config е
+        отделна нишка. До macOS 26 това минаваше, но macOS 27 прекъсва процеса (SIGTRAP в
+        -[NSStatusItem setMenu:] → assertBarrierOnQueue), ако менюто/заглавието/иконата се
+        сменят извън главната нишка. Затова всяка промяна по иконата минава оттук.
+        """
+        if not IS_MAC:
+            fn()
+            return
+        try:
+            import Foundation
+            Foundation.NSOperationQueue.mainQueue().addOperationWithBlock_(fn)
+        except Exception:
+            log.exception("Main-queue dispatch failed; running on the calling thread")
+            fn()
+
+    def _mac_show(self) -> None:
         """macOS: показва елемента в лентата и слага монохромна „template“ икона.
 
-        Всичко върви в главната нишка (AppKit не е thread-safe; pystray вика setup от помощна
-        нишка). Иконата се рисува с родния системен шрифт през AppKit, така че кирилицата е
+        Иконата се рисува с родния системен шрифт през AppKit, така че кирилицата е
         гарантирана и е Retina. Ако нещо се провали, елементът показва текст „КЛ“, за да не е
-        никога с нулева ширина (невидим).
+        никога с нулева ширина (невидим). Вика се през _on_main.
         """
-        import Foundation
+        try:
+            self.icon.visible = True
+        except Exception:
+            log.exception("icon.visible failed")
+        try:
+            self._mac_set_template_icon()
+        except Exception:
+            log.exception("Mac template icon failed; falling back to text title")
+            self._mac_set_text_title()
 
+    def _update_menu(self) -> None:
+        """Опреснява менюто (статус „активна/неактивна“) в главната нишка."""
         def apply():
             try:
-                self.icon.visible = True
+                self.icon.update_menu()
             except Exception:
-                log.exception("icon.visible failed")
-            try:
-                self._mac_set_template_icon()
-            except Exception:
-                log.exception("Mac template icon failed; falling back to text title")
-                self._mac_set_text_title()
+                log.debug("update_menu failed", exc_info=True)
+        self._on_main(apply)
 
-        try:
-            Foundation.NSOperationQueue.mainQueue().addOperationWithBlock_(apply)
-        except Exception:
-            log.exception("Main-queue dispatch failed; showing from setup thread")
-            apply()
+    def _set_title(self, title: str) -> None:
+        def apply():
+            try:
+                self.icon.title = title
+            except Exception:
+                log.debug("title update failed", exc_info=True)
+        self._on_main(apply)
 
     def _mac_set_template_icon(self) -> None:
         import AppKit
@@ -167,10 +193,7 @@ class TrayApp:
             log.error("Cannot start hotkey listener: %s", e)
             if notify_failure:
                 self.notify(f"Клавишната комбинация не е активна: {e}")
-        try:
-            self.icon.update_menu()
-        except Exception:
-            pass
+        self._update_menu()
 
     def open_mac_permissions(self, *_) -> None:
         try:
@@ -187,10 +210,7 @@ class TrayApp:
         if self.listener_ok and self.listener is not None and not self.listener.running:
             log.warning("Hotkey listener thread died – will restart")
             self.listener_ok = False
-            try:
-                self.icon.update_menu()
-            except Exception:
-                pass
+            self._update_menu()
         if self.listener_ok or self._clock() < self._next_listener_retry:
             return
         if IS_MAC and not mac_accessibility_trusted(prompt=False):
@@ -206,7 +226,7 @@ class TrayApp:
 
     def reload(self) -> None:
         self.cfg = config.load()
-        self.icon.title = self._title()
+        self._set_title(self._title())
         self.start_listener()
         self.notify(f"Настройките са приложени. Комбинация: {config.hotkey_label(self.cfg['hotkey'])}")
 

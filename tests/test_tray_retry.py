@@ -107,3 +107,56 @@ class RetryListenerTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipIf(tray_mod is None, f"tray deps unavailable: {_import_error}")
+class MainThreadDispatchTests(unittest.TestCase):
+    """macOS 27 прекъсва процеса, ако менюто/заглавието на NSStatusItem се сменят извън
+    главната нишка – всички промени по иконата трябва да минават през NSOperationQueue.mainQueue."""
+
+    def make(self):
+        app = tray_mod.TrayApp.__new__(tray_mod.TrayApp)
+        app.cfg = {"hotkey": {"ctrl": True, "key": "d"}}
+        app.icon = SimpleNamespace(update_menu=mock.Mock(), title="")
+        return app
+
+    def fake_foundation(self):
+        queued = []
+        foundation = SimpleNamespace(
+            NSOperationQueue=SimpleNamespace(
+                mainQueue=lambda: SimpleNamespace(addOperationWithBlock_=queued.append)))
+        return foundation, queued
+
+    def test_mac_updates_are_queued_on_main_thread(self):
+        app = self.make()
+        foundation, queued = self.fake_foundation()
+        with mock.patch.object(tray_mod, "IS_MAC", True), \
+                mock.patch.dict(sys.modules, {"Foundation": foundation}):
+            app._update_menu()
+            app._set_title("KirLat – Ctrl+D")
+        self.assertEqual(len(queued), 2)
+        app.icon.update_menu.assert_not_called()             # нищо не е пипано от тази нишка
+        for block in queued:
+            block()
+        app.icon.update_menu.assert_called_once()
+        self.assertEqual(app.icon.title, "KirLat – Ctrl+D")
+
+    def test_other_platforms_update_directly(self):
+        app = self.make()
+        with mock.patch.object(tray_mod, "IS_MAC", False):
+            app._update_menu()
+            app._set_title("t")
+        app.icon.update_menu.assert_called_once()
+        self.assertEqual(app.icon.title, "t")
+
+    def test_start_listener_uses_main_thread_dispatch(self):
+        app = self.make()
+        app._init_listener_state()
+        app.converter = SimpleNamespace(run=lambda: None, busy=False)
+        app.notify = lambda m: None
+        app._update_menu = mock.Mock()
+        with mock.patch.object(tray_mod, "HotkeyListener") as hl:
+            hl.return_value.start = mock.Mock()
+            app.start_listener()
+        app._update_menu.assert_called_once()
+        app.icon.update_menu.assert_not_called()
