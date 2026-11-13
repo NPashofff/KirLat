@@ -9,6 +9,7 @@ import pystray
 
 from . import autostart, config
 from .actions import SelectionConverter
+from .foreground import make_passthrough_check
 from .hotkey import HotkeyListener
 from .config import IS_MAC
 from .icon import make_icon_image
@@ -183,7 +184,8 @@ class TrayApp:
         if self.listener is not None:
             self.listener.stop()
         self.listener = HotkeyListener(
-            self.cfg["hotkey"], self.converter.run, busy_check=lambda: self.converter.busy
+            self.cfg["hotkey"], self.converter.run, busy_check=lambda: self.converter.busy,
+            passthrough_check=make_passthrough_check(self.cfg),
         )
         try:
             self.listener.start()

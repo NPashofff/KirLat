@@ -13,6 +13,8 @@ DEFAULTS = {
     "direction": "auto",          # auto | to_bg | to_en
     "restore_clipboard": True,
     "sound": True,
+    "passthrough_remote": True,   # не прихващай комбинацията в Remote Desktop / AnyDesk / …
+    "passthrough_apps": [],       # допълнителни програми (bundle id или име на .exe)
 }
 
 

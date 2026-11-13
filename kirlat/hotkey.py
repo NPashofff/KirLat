@@ -31,10 +31,12 @@ def _mac_listener_class():
 
 
 class HotkeyListener:
-    def __init__(self, hotkey: dict, callback, busy_check=None):
+    def __init__(self, hotkey: dict, callback, busy_check=None, passthrough_check=None):
         self.hotkey = hotkey
         self.callback = callback
         self.busy_check = busy_check or (lambda: False)
+        # True → не прихващай комбинацията (напр. активен е Remote Desktop и тя е за KirLat там)
+        self.passthrough_check = passthrough_check or (lambda: False)
         self._key = str(hotkey.get("key", "w")).lower()
         self._mods = (
             bool(hotkey.get("ctrl")),
@@ -45,6 +47,7 @@ class HotkeyListener:
         self._listener = None
         self._armed = True          # False докато клавишът е задържан (без авто-повторение)
         self._swallow_up = False    # погълни и key-up, ако key-down е бил погълнат
+        self._passing = False       # текущото натискане се пропуска към програмата на преден план
 
     # ------------------------------------------------------------------ API
     def start(self) -> None:
@@ -116,6 +119,24 @@ class HotkeyListener:
         except Exception:
             log.exception("Hotkey callback failed")
 
+    def _on_combo_down(self) -> bool:
+        """Key-down на комбинацията. True – погълни събитието; False – пропусни го."""
+        if self._armed:
+            try:
+                self._passing = bool(self.passthrough_check())
+            except Exception:
+                log.debug("Passthrough check failed", exc_info=True)
+                self._passing = False
+        if self._passing:
+            self._armed = False
+            self._swallow_up = False
+            return False
+        if self._armed and not self.busy_check():
+            self._armed = False
+            self._fire()
+        self._swallow_up = True
+        return True
+
     def _linux_combo(self) -> str:
         ctrl, alt, shift, meta = self._mods
         parts = []
@@ -150,11 +171,8 @@ class HotkeyListener:
         if msg in (0x0100, 0x0104):            # WM_KEYDOWN / WM_SYSKEYDOWN
             if self._win_mods() != self._mods:
                 return
-            if self._armed and not self.busy_check():
-                self._armed = False
-                self._fire()
-            self._swallow_up = True
-            self._listener.suppress_event()
+            if self._on_combo_down():
+                self._listener.suppress_event()
         elif msg in (0x0101, 0x0105):          # WM_KEYUP / WM_SYSKEYUP
             self._armed = True
             if self._swallow_up:
@@ -187,11 +205,7 @@ class HotkeyListener:
             )
             if mods != self._mods:
                 return event
-            if self._armed and not self.busy_check():
-                self._armed = False
-                self._fire()
-            self._swallow_up = True
-            return None
+            return None if self._on_combo_down() else event
         self._armed = True
         if self._swallow_up:
             self._swallow_up = False

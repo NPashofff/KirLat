@@ -97,17 +97,21 @@ def run() -> None:
         play_success()
 
     ttk.Button(snd, text="Чуй", width=6, command=play_test_sound).pack(side="left")
+    v_remote = tk.BooleanVar(value=bool(cfg.get("passthrough_remote", True)))
+    ttk.Checkbutton(frm, text="Не прихващай комбинацията в Remote Desktop / AnyDesk / TeamViewer "
+                              "(обработва я KirLat на отдалечената машина)", variable=v_remote).grid(
+        row=11, column=0, columnspan=4, sticky="w", **PAD)
 
     # ---- Проба ---------------------------------------------------------------
-    ttk.Label(frm, text="Проба", font=bold).grid(row=11, column=0, columnspan=4, sticky="w", **PAD)
+    ttk.Label(frm, text="Проба", font=bold).grid(row=12, column=0, columnspan=4, sticky="w", **PAD)
     v_test_in = tk.StringVar(value="Zdrawej, kak si?")
     v_test_out = tk.StringVar()
-    ttk.Entry(frm, textvariable=v_test_in, width=72).grid(row=12, column=0, columnspan=4, sticky="w", **PAD)
-    ttk.Label(frm, textvariable=v_test_out, font=("TkDefaultFont", 11)).grid(row=13, column=0, columnspan=4, sticky="w", **PAD)
+    ttk.Entry(frm, textvariable=v_test_in, width=72).grid(row=13, column=0, columnspan=4, sticky="w", **PAD)
+    ttk.Label(frm, textvariable=v_test_out, font=("TkDefaultFont", 11)).grid(row=14, column=0, columnspan=4, sticky="w", **PAD)
 
     # ---- Бутони --------------------------------------------------------------
     btns = ttk.Frame(frm)
-    btns.grid(row=14, column=0, columnspan=4, sticky="e", pady=(10, 0))
+    btns.grid(row=15, column=0, columnspan=4, sticky="e", pady=(10, 0))
 
     def current_layout_id() -> str:
         return layout_ids[layout_names.index(v_layout.get())]
@@ -138,6 +142,7 @@ def run() -> None:
             "direction": current_dir_id(),
             "restore_clipboard": v_restore.get(),
             "sound": v_sound.get(),
+            "passthrough_remote": v_remote.get(),
         })
         try:
             config.save(new_cfg)
